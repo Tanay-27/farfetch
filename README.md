@@ -1,49 +1,53 @@
-# farfetch 🦀 ✨
+# farfetch 🦀
 
-An open-source, git-aware TUI API client built in Rust. No bloat, no cloud sync — just instant ad-hoc requests, smart cURL parsing, and environment switching tied directly to your active Git branch.
+An open-source, keyboard-driven TUI API client built in Rust. No bloat, no cloud sync — instant ad-hoc requests, smart cURL import, environment switching tied to your Git branch, and a persistent request collection — all in under 15 MB of RAM.
 
-> **A lightning-fast, zero-config REST client in under 15 MB of RAM? Sounds *farfetch'd*.**
+> **A lightning-fast, zero-config REST client? Sounds *farfetch'd*.**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-
-`farfetch` is a keyboard-driven **Terminal User Interface (TUI)** API client built in Rust. It runs natively inside **Zed's terminal panels** and any standalone terminal emulator.
-
-Say goodbye to heavy Electron wrappers, forced cloud sync, and massive memory footprints.
 
 ---
 
 ## Features
 
-- **Zero-config scratchpad** — launch, paste a URL, and fire instantly. `Ctrl+S` saves the request to a persistent collection when you're ready.
-- **Git-branch environment syncing** — link API environments to local Git branches. Switching from `feature/*` to `main` automatically swaps host URLs and tokens. No accidental prod requests.
-- **Smart cURL ingestion** — paste a raw `curl` string from DevTools or Slack and the parser populates every field automatically (method, headers, body).
-- **External editor hand-off** — press `E` on the body pane to open a temp buffer in your editor. Save and close; the TUI updates instantly.
-- **Microscopic footprint** — native binary, no runtime overhead, under 15 MB RAM at 60 FPS idle.
+- **Zero-config scratchpad** — launch, type a URL, press `F5`. No project setup needed.
+- **Persistent collections** — `F4` saves any request to a named collection. Sidebar loads it in one keystroke.
+- **Git-branch environment syncing** — link environments to branch patterns (`feature/*`, `main`). Switching branches auto-resolves the right host URL and token set.
+- **`{{VAR}}` substitution** — use template variables in URLs and headers. Values are resolved at fire time from the active environment — raw templates stay visible while editing.
+- **Smart cURL import** — `F6` pastes a raw `curl` string (from DevTools or a colleague) and populates every field: method, headers, body.
+- **Request history** — every fired request is appended to `.farfetch/history.json` (capped at 500). `F3` opens a fuzzy search over the full history.
+- **External editor hand-off** — `E` on the body pane opens a temp buffer in your `$EDITOR`. Save and close; the body updates instantly.
+- **Copy as cURL** — `C` generates a shell-ready `curl` command for the current request and copies it to the clipboard.
+- **Syntax-highlighted responses** — JSON responses are colorized in the response pane.
+- **Microscopic footprint** — native binary, no runtime, under 15 MB RAM at 60 FPS idle.
 
 ---
 
-## Interface
+## Screenshots
 
-```
-┌──────────────────────────────────────────────────────────┐
-│ [local] → (Git: feature/auth)              [?] Help      │
-├──────────────────────────────────────────────────────────┤
-│ [POST] http://localhost:8080/api/v1/auth/login            │
-├─────────────────────────────┬────────────────────────────┤
-│ Headers                     │ Body (JSON)                 │
-│   Content-Type: app/json    │ {                           │
-│   Authorization: Bearer ... │   "username": "developer", │
-│                             │   "password": "•••••••••"  │
-│                             │ }                           │
-├──────────────────────────────────────────────────────────┤
-│ 200 OK  ·  42ms  ·  1.2 KB                               │
-├──────────────────────────────────────────────────────────┤
-│ {                                                         │
-│   "status": "authenticated",                              │
-│   "token": "eyJhbGci..."                                  │
-│ }                                                         │
-└──────────────────────────────────────────────────────────┘
-```
+**Main interface** — sidebar, request pane, headers/body editors, and response viewer:
+
+![farfetch main interface](assets/screenshot_empty.png)
+
+**Typing a URL** — URL bar highlighted, Editing mode active:
+
+![URL entry](assets/screenshot_url.png)
+
+**Live JSON response** — syntax-highlighted body, status bar shows 200 OK, timing, and size:
+
+![JSON response](assets/screenshot_response.png)
+
+**Help overlay** — full keybinding reference (`?` or `F1`):
+
+![Help overlay](assets/screenshot_help.png)
+
+**Environment manager** — create/switch environments, edit `{{VAR}}` variables (`F2`):
+
+![Environment manager](assets/screenshot_env.png)
+
+**Save to collection** — two-step prompt to pick or create a collection (`F4`):
+
+![Save request](assets/screenshot_save.png)
 
 ---
 
@@ -52,29 +56,33 @@ Say goodbye to heavy Electron wrappers, forced cloud sync, and massive memory fo
 | Key | Action |
 |---|---|
 | `Tab` / `Shift+Tab` | Cycle focused pane |
-| `Enter` | Enter editing mode |
+| `Enter` | Enter editing mode on URL or Body pane |
 | `Esc` | Exit editing mode |
-| `Ctrl+Enter` | Send request |
+| `F5` | Send request |
+| `←` / `→` | Cycle HTTP method (URL pane, Normal mode) |
 | `j` / `k` | Scroll response / navigate headers |
-| `←` / `→` | Cycle HTTP method (when URL pane focused) |
 | `Y` | Yank response body to clipboard |
-| `E` | Open body in external editor |
-| `Ctrl+S` | Save request to collection |
-| `Ctrl+R` | Fuzzy-search request history |
-| `?` | Toggle help overlay |
-| `q` | Quit |
+| `E` | Open body in external editor (Body pane) |
+| `C` | Copy request as cURL |
+| `F4` | Save request to collection |
+| `F3` | Fuzzy-search request history |
+| `F6` | Paste cURL string and auto-populate fields |
+| `F2` | Open environment manager |
+| `F1` / `?` | Toggle help overlay |
+| `q` / `Ctrl+C` | Quit |
 
 ---
 
 ## Workspace layout
 
-Configuration is entirely local and human-readable:
+Configuration lives in `.farfetch/` next to your project (or in `~/.farfetch/` as a fallback). All files are plain JSON — safe to read, diff, and commit (except `environments.json` which holds secrets).
 
 ```
 .farfetch/
-├── config.json         # Workspace defaults and Git branch → environment maps
-├── environments.json   # API keys and secrets (add to .gitignore)
-└── collections.json    # Saved request collections (safe to commit)
+├── config.json          # Branch→environment mapping, editor preference
+├── environments.json    # API keys and base URLs (add to .gitignore)
+├── collections.json     # Saved requests (safe to commit)
+└── history.json         # Auto-appended request history (last 500)
 ```
 
 Example `config.json`:
@@ -92,6 +100,23 @@ Example `config.json`:
 }
 ```
 
+Example `environments.json`:
+
+```json
+{
+  "local": {
+    "host": "http://localhost:8080",
+    "token": "dev-token-abc"
+  },
+  "production": {
+    "host": "https://api.example.com",
+    "token": "prod-token-xyz"
+  }
+}
+```
+
+With these files in place, a URL like `{{host}}/api/v1/users` resolves automatically based on the current Git branch.
+
 ---
 
 ## Getting started
@@ -101,10 +126,11 @@ Example `config.json`:
 ```bash
 git clone https://github.com/yourusername/farfetch.git
 cd farfetch
-cargo run
+cargo build --release
+./target/release/farfetch
 ```
 
-For live reloading while working on the UI:
+For live reloading while developing:
 
 ```bash
 cargo install cargo-watch
@@ -115,7 +141,7 @@ cargo watch -x run
 
 ## Contributing
 
-Browse open issues for `good first issue` or `help wanted` tags. Open a discussion before large feature work so design can be aligned first.
+Check open issues for `good first issue` or `help wanted` tags. Open a discussion before large feature work.
 
 ```bash
 cargo fmt --check
