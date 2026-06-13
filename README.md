@@ -1,4 +1,4 @@
-# farfetch
+# farfetch 🦀 ✨
 
 An open-source, git-aware TUI API client built in Rust. No bloat, no cloud sync — just instant ad-hoc requests, smart cURL parsing, and environment switching tied directly to your active Git branch.
 
