@@ -25,6 +25,21 @@ use app::{App, InputMode, Overlay};
 use events::AppEvent;
 use state::focus::FocusedPane;
 
+// Restores the terminal on both normal exit and panic via Drop.
+struct TerminalGuard(Terminal<CrosstermBackend<io::Stdout>>);
+
+impl Drop for TerminalGuard {
+    fn drop(&mut self) {
+        let _ = disable_raw_mode();
+        let _ = execute!(
+            self.0.backend_mut(),
+            LeaveAlternateScreen,
+            DisableMouseCapture,
+        );
+        let _ = self.0.show_cursor();
+    }
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     // ── Bootstrap config & git ────────────────────────────────────────────────
@@ -47,7 +62,7 @@ async fn main() -> anyhow::Result<()> {
     let mut stdout = io::stdout();
     execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
     let backend = CrosstermBackend::new(stdout);
-    let mut terminal = Terminal::new(backend)?;
+    let mut guard = TerminalGuard(Terminal::new(backend)?);
 
     // ── Channels ──────────────────────────────────────────────────────────────
     let (app_tx, mut app_rx) = mpsc::channel::<AppEvent>(32);
@@ -79,21 +94,13 @@ async fn main() -> anyhow::Result<()> {
     app.rebuild_sidebar();
 
     // ── Run ───────────────────────────────────────────────────────────────────
-    let result = run_app(&mut terminal, &mut app, &mut app_rx, &mut ev_rx).await;
-
-    // ── Restore terminal ──────────────────────────────────────────────────────
-    disable_raw_mode()?;
-    execute!(
-        terminal.backend_mut(),
-        LeaveAlternateScreen,
-        DisableMouseCapture,
-    )?;
-    terminal.show_cursor()?;
+    let result = run_app(&mut guard.0, &mut app, &mut app_rx, &mut ev_rx).await;
 
     if let Err(e) = &result {
         eprintln!("Error: {e}");
     }
     result
+    // guard drops here, restoring the terminal whether run_app succeeded or panicked
 }
 
 async fn run_app(
@@ -151,7 +158,12 @@ fn handle_key(app: &mut App, key: crossterm::event::KeyEvent) {
 
     // Global shortcuts — work in any input mode
     match key.code {
-        KeyCode::F(1) | KeyCode::Char('?') => {
+        KeyCode::F(1) => {
+            app.overlay = Overlay::Help;
+            return;
+        }
+        // Only intercept '?' in Normal mode so it can still be typed in text fields.
+        KeyCode::Char('?') if app.input_mode == InputMode::Normal => {
             app.overlay = Overlay::Help;
             return;
         }
@@ -262,13 +274,12 @@ fn handle_key(app: &mut App, key: crossterm::event::KeyEvent) {
                 app.next_pane();
             }
             KeyCode::Backspace => app.backspace_char(),
+            // fire_request resets input_mode internally
             KeyCode::Enter if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                app.input_mode = InputMode::Normal;
                 app.fire_request();
             }
             // URL bar: Enter submits (like a browser address bar)
             KeyCode::Enter if app.focused_pane == FocusedPane::Url => {
-                app.input_mode = InputMode::Normal;
                 app.fire_request();
             }
             KeyCode::Enter => {

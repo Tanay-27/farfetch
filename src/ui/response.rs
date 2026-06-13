@@ -8,7 +8,7 @@ use ratatui::{
 
 use crate::app::App;
 use crate::state::focus::FocusedPane;
-use super::{highlight, styles};
+use super::styles;
 
 pub fn render_metrics(frame: &mut Frame, app: &App, area: Rect) {
     let block = Block::default()
@@ -88,8 +88,8 @@ pub fn render_body(frame: &mut Frame, app: &App, area: Rect) {
         vec![Line::from("  Sending request...")]
     } else if app.response.body.is_empty() && app.response.status.is_none() {
         vec![Line::from("  Press F5 to send a request")]
-    } else if app.response.content_type.contains("json") {
-        highlight::colorize_json(&app.response.body)
+    } else if !app.response.highlighted_lines.is_empty() {
+        app.response.highlighted_lines.clone()
     } else {
         app.response
             .lines

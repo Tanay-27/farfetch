@@ -100,6 +100,10 @@ impl Default for Overlay {
     }
 }
 
+fn shell_escape(s: &str) -> String {
+    format!("'{}'", s.replace('\'', "'\\''"))
+}
+
 // ── App ───────────────────────────────────────────────────────────────────────
 
 pub struct App {
@@ -175,10 +179,16 @@ impl App {
         pairs
     }
 
-    fn save_environments(&self) {
+    fn save_environments(&self) -> anyhow::Result<()> {
         let path = self.farfetch_dir.join("environments.json");
-        if let Ok(s) = serde_json::to_string_pretty(&self.environments) {
-            let _ = std::fs::write(path, s);
+        let s = serde_json::to_string_pretty(&self.environments)?;
+        std::fs::write(path, s)?;
+        Ok(())
+    }
+
+    fn save_environments_or_warn(&mut self) {
+        if let Err(e) = self.save_environments() {
+            self.status_message = Some(format!("Save failed: {e}"));
         }
     }
 
@@ -240,9 +250,12 @@ impl App {
                 self.collections.remove(col_idx);
             }
             let path = self.farfetch_dir.join("collections.json");
-            let _ = crate::storage::collections::save(&path, &self.collections);
+            if let Err(e) = crate::storage::collections::save(&path, &self.collections) {
+                self.status_message = Some(format!("Save failed: {e}"));
+            } else {
+                self.status_message = Some(format!("Deleted «{}»", name));
+            }
             self.rebuild_sidebar();
-            self.status_message = Some(format!("Deleted «{}»", name));
         }
     }
 
@@ -451,6 +464,8 @@ impl App {
     pub fn fire_request(&mut self) {
         if self.loading || self.request.url.is_empty() { return; }
 
+        self.input_mode = InputMode::Normal;
+
         let env_vars = self.environments.get(&self.active_env).cloned().unwrap_or_default();
         let url      = crate::config::environment::resolve_vars(&self.request.url, &env_vars);
         let body_str = crate::config::environment::resolve_vars(&self.request.body, &env_vars);
@@ -468,6 +483,16 @@ impl App {
             body: if body_str.is_empty() { None } else { Some(body_str) },
         };
 
+        // Snapshot the raw request at fire time so history records what was sent,
+        // not whatever the user edits while the response is in flight.
+        let snapshot = SavedRequest {
+            name:    String::new(),
+            method:  self.request.method.clone(),
+            url:     self.request.url.clone(),
+            headers: self.request.headers.clone(),
+            body:    self.request.body.clone(),
+        };
+
         self.loading = true;
         self.focused_pane = FocusedPane::Response;
         self.status_message = None;
@@ -476,7 +501,7 @@ impl App {
         let tx = self.tx.clone();
         tokio::spawn(async move {
             match crate::network::client::execute_request(&client, req).await {
-                Ok(resp) => { let _ = tx.send(AppEvent::HttpResponse(resp)).await; }
+                Ok(resp) => { let _ = tx.send(AppEvent::HttpResponse(resp, snapshot)).await; }
                 Err(e)   => { let _ = tx.send(AppEvent::Error(e.to_string())).await; }
             }
         });
@@ -519,12 +544,12 @@ impl App {
         }
         for (k, v) in &self.request.headers {
             let vr = crate::config::environment::resolve_vars(v, &env_vars);
-            parts.push(format!("-H '{}: {}'", k, vr));
+            parts.push(format!("-H {}", shell_escape(&format!("{k}: {vr}"))));
         }
         if !body_str.is_empty() {
-            parts.push(format!("-d '{}'", body_str.replace('\'', "'\\''")));
+            parts.push(format!("-d {}", shell_escape(&body_str)));
         }
-        parts.push(format!("'{}'", url));
+        parts.push(shell_escape(&url));
 
         let curl = parts.join(" \\\n  ");
         match crate::clipboard::copy_to_clipboard(&curl) {
@@ -596,9 +621,12 @@ impl App {
         }
 
         let path = self.farfetch_dir.join("collections.json");
-        let _ = crate::storage::collections::save(&path, &self.collections);
+        if let Err(e) = crate::storage::collections::save(&path, &self.collections) {
+            self.status_message = Some(format!("Save failed: {e}"));
+        } else {
+            self.status_message = Some(format!("Saved «{req_name}» → {col_name}"));
+        }
         self.rebuild_sidebar();
-        self.status_message = Some(format!("Saved «{req_name}» → {col_name}"));
     }
 
     // ── Fuzzy search ──────────────────────────────────────────────────────────
@@ -611,17 +639,10 @@ impl App {
         self.overlay = Overlay::FuzzySearch(FuzzyOverlay::new(entries));
     }
 
-    fn append_history(&mut self) {
-        let entry = SavedRequest {
-            name:    String::new(),
-            method:  self.request.method.clone(),
-            url:     self.request.url.clone(),
-            headers: self.request.headers.clone(),
-            body:    self.request.body.clone(),
-        };
+    fn append_history(&mut self, entry: SavedRequest) {
         let path = self.farfetch_dir.join("history.json");
-        let _ = crate::storage::history::append(&path, entry.clone());
-        self.history.push(entry);
+        self.history.push(entry.clone());
+        let _ = crate::storage::history::append(&path, entry);
         if self.history.len() > 500 {
             self.history.drain(0..self.history.len() - 500);
         }
@@ -795,7 +816,7 @@ impl App {
                             } else {
                                 let name = name.clone();
                                 self.environments.remove(&name);
-                                self.save_environments();
+                                self.save_environments_or_warn();
                                 state.env_cursor = state.env_cursor.saturating_sub(1);
                             }
                         }
@@ -834,7 +855,7 @@ impl App {
                                 if let Some(env) = self.environments.get_mut(&env_name) {
                                     env.remove(&k);
                                 }
-                                self.save_environments();
+                                self.save_environments_or_warn();
                                 state.var_cursor = state.var_cursor.saturating_sub(1);
                             }
                         }
@@ -849,7 +870,7 @@ impl App {
                     let name = input.trim().to_string();
                     if !name.is_empty() && !self.environments.contains_key(&name) {
                         self.environments.insert(name.clone(), Default::default());
-                        self.save_environments();
+                        self.save_environments_or_warn();
                         let names = self.env_names();
                         state.env_cursor = names.iter().position(|n| n == &name).unwrap_or(0);
                     }
@@ -885,7 +906,7 @@ impl App {
                     KeyCode::Enter => {
                         let val = input.clone();
                         self.environments.entry(env_name).or_default().insert(var_key, val);
-                        self.save_environments();
+                        self.save_environments_or_warn();
                         state.edit = EnvEditMode::None;
                     }
                     KeyCode::Backspace => { input.pop(); }
@@ -906,7 +927,7 @@ impl App {
                         if let Some(env) = self.environments.get_mut(&env_name) {
                             env.insert(var_key, val);
                         }
-                        self.save_environments();
+                        self.save_environments_or_warn();
                         state.edit = EnvEditMode::None;
                     }
                     KeyCode::Backspace => { input.pop(); }
@@ -925,7 +946,7 @@ impl App {
 
     pub fn handle_event(&mut self, event: AppEvent) {
         match event {
-            AppEvent::HttpResponse(resp) => {
+            AppEvent::HttpResponse(resp, snapshot) => {
                 self.loading = false;
                 self.response.status       = Some(resp.status);
                 self.response.status_text  = resp.status_text;
@@ -933,12 +954,19 @@ impl App {
                 self.response.size_bytes   = resp.size_bytes;
                 self.response.content_type = resp.content_type;
                 self.response.set_body(resp.body);
-                self.append_history();
+                if self.response.content_type.contains("json") {
+                    self.response.highlighted_lines =
+                        crate::ui::highlight::colorize_json(&self.response.body);
+                }
+                self.append_history(snapshot);
             }
             AppEvent::FileChanged(content) => {
                 self.request.body = content.trim_end().to_string();
                 self.waiting_for_editor = false;
                 self.status_message = Some("Body updated from editor".to_string());
+            }
+            AppEvent::EditorClosed => {
+                self.waiting_for_editor = false;
             }
             AppEvent::Error(msg) => {
                 self.loading = false;
