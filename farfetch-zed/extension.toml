@@ -1,4 +1,4 @@
-id = "farfetch"
+id = "farfetch-zed"
 name = "farfetch"
 version = "0.1.0"
 schema_version = 1
@@ -7,5 +7,5 @@ authors = ["Tanay Shah <tanayshah027@gmail.com>"]
 repository = "https://github.com/Tanay-27/farfetch"
 
 [slash_commands.farfetch]
-description = "Ensure the farfetch binary is installed and show usage."
-requires_argument = false
+description = "Install, test, or check status of the farfetch TUI client"
+requires_argument = true
