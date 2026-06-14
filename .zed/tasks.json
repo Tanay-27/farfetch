@@ -1,0 +1,23 @@
+[
+  {
+    "label": "farfetch: Open",
+    "command": "farfetch",
+    "use_new_terminal": true,
+    "allow_concurrent_runs": false,
+    "reveal": "always"
+  },
+  {
+    "label": "farfetch: Build (dev)",
+    "command": "cargo build -p farfetch",
+    "use_new_terminal": false,
+    "allow_concurrent_runs": false,
+    "reveal": "always"
+  },
+  {
+    "label": "farfetch: Build & Open (dev)",
+    "command": "cargo build -p farfetch && ./target/debug/farfetch",
+    "use_new_terminal": true,
+    "allow_concurrent_runs": false,
+    "reveal": "always"
+  }
+]

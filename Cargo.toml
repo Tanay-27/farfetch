@@ -1,19 +1,6 @@
-[package]
-name = "farfetch"
-version = "0.1.0"
-edition = "2021"
-
-[dependencies]
-ratatui    = "0.27"
-crossterm  = "0.27"
-tokio      = { version = "1", features = ["full"] }
-reqwest    = { version = "0.11", features = ["rustls-tls"], default-features = false }
-serde      = { version = "1", features = ["derive"] }
-serde_json = "1"
-anyhow     = "1"
-glob       = "0.3"
-copypasta  = "0.10"
-notify     = "6"
-
-# Pinned: url 2.5+ pulls in icu4x crates that require Rust 1.86+; this project targets 1.85.
-url        = "=2.4.1"
+[workspace]
+resolver = "2"
+members = [
+    "farfetch",
+    "farfetch-zed",
+]

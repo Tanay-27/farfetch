@@ -124,7 +124,7 @@ With these files in place, a URL like `{{host}}/api/v1/users` resolves automatic
 **Prerequisites:** Rust toolchain via [rustup.rs](https://rustup.rs).
 
 ```bash
-git clone https://github.com/yourusername/farfetch.git
+git clone https://github.com/Tanay-27/farfetch.git
 cd farfetch
 cargo build --release
 ./target/release/farfetch
